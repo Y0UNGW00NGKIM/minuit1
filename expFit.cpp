@@ -68,16 +68,24 @@ double expPdf(double* xPtr, double par[]){
 // return NLL given a histogram and function
 
 double calcNLL(TH1F* h, TF1* f){
-  double nll=0;
+  double chi2=0;
   for (int i=1; i<=h->GetNbinsX(); i++){
+    double n=(double)h->GetBinContent(i);
+    if (n<=0.0) continue;
     double x=h->GetBinCenter(i);
-    int n=(int)(h->GetBinContent(i));
     double mu=f->Eval(x);
-    if (mu<1e-10) mu=1e-10;    // avoid log(0) problems if we go outside a reasonable range!
-    nll -= n * TMath::Log(mu) - mu  - TMath::LnGamma(n+1);
+    double diff = n - mu;
+    chi2 += (diff*diff)/n;
   }
-  // cout << "nll "<< nll <<endl;
-  return 2*nll;   // factor of 2 so the 1 sigma error contours follow the chi^2 convention
+  return chi2;
+}
+
+int countNonZeroBins(TH1F* h){
+  int c=0;
+  for (int i=1; i<=h->GetNbinsX(); i++){
+    if (h->GetBinContent(i)>0.0) c+=1;
+  }
+  return c;
 }
 
 
@@ -222,11 +230,27 @@ int main(int argc, char **argv) {
   double fmin, fedm, errdef;
   int npari, nparx, istat;  // see https://root.cern/doc/master/classTMinuit.html 
   minuit.mnstat(fmin, fedm, errdef, npari, nparx, istat);
-  cout << "minimum of NLL = " << fmin << endl;
+  cout << "chi-square = " << fmin << endl;
   cout << "fit status = " << istat << endl;
   cout << "best fit parameters\n" <<endl;
   for (int i=0; i<npar; ++i){
     cout << i << " : " << outpar[i] << " +- " << err[i] << endl;
+  }
+
+  {
+    int used_bins = countNonZeroBins(hdata);
+    double best_chi2 = calcNLL(hdata, myfunc);
+    int ndf = used_bins - npar;
+    cout << "chi-square: " << best_chi2 << endl;
+    if (ndf>0){
+      double red = best_chi2 / ndf;
+      double pv = TMath::Prob(best_chi2, ndf);
+      cout << "reduced chi-square: " << red << endl;
+      cout << "degrees of freedom: " << ndf << endl;
+      cout << "p-value: " << pv << endl;
+    } else {
+      cout << "degrees of freedom: " << ndf << endl;
+    }
   }
 
   cout << "\nTo exit, quit ROOT from the File menu of the plot (or use control-C)" << endl;
